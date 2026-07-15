@@ -1,6 +1,7 @@
 import JSZip from 'jszip'
 import { fetchConversation, getCurrentChatId, processConversation } from '../api'
 import i18n from '../i18n'
+import { applyMessageSelection, applyMessageSelectionToRawConversation } from '../messageSelection'
 import { checkIfConversationStarted } from '../page'
 import { convertToOoba, convertToTavern } from '../utils/conversion'
 import { buildJsonBatchFileName, buildZipFileName, downloadFile, getFileNameWithFormat } from '../utils/download'
@@ -22,7 +23,7 @@ export async function exportToJson(fileNameFormat: string) {
     /**
      * The official format is just an array of the API response.
      */
-    const content = conversationToJson([rawConversation])
+    const content = conversationToJson([applyMessageSelectionToRawConversation(rawConversation)])
     downloadFile(fileName, 'application/json', content)
 
     return true
@@ -36,7 +37,7 @@ export async function exportToTavern(fileNameFormat: string) {
 
     const chatId = await getCurrentChatId()
     const rawConversation = await fetchConversation(chatId, false)
-    const conversation = processConversation(rawConversation)
+    const conversation = applyMessageSelection(processConversation(rawConversation))
 
     const fileName = getFileNameWithFormat(`${fileNameFormat}.tavern`, 'jsonl', { title: conversation.title, chatId })
     const content = convertToTavern(conversation)
@@ -53,7 +54,7 @@ export async function exportToOoba(fileNameFormat: string) {
 
     const chatId = await getCurrentChatId()
     const rawConversation = await fetchConversation(chatId, false)
-    const conversation = processConversation(rawConversation)
+    const conversation = applyMessageSelection(processConversation(rawConversation))
 
     const fileName = getFileNameWithFormat(`${fileNameFormat}.ooba`, 'json', { title: conversation.title, chatId })
     const content = convertToOoba(conversation)

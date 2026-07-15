@@ -7,71 +7,19 @@ import { exportToPng } from '../exporter/image'
 import { exportToJson, exportToOoba, exportToTavern } from '../exporter/json'
 import { exportToMarkdown } from '../exporter/markdown'
 import { exportToText } from '../exporter/text'
+import { useCollapsedSidebar } from '../hooks/useCollapsedSidebar'
 import { useWindowResize } from '../hooks/useWindowResize'
+import { refreshMessageSelection } from '../messageSelection'
 import { Divider } from './Divider'
 import { ExportDialog } from './ExportDialog'
-import { FileCode, IconArrowRightFromBracket, IconCamera, IconCopy, IconJSON, IconMarkdown, IconSetting, IconZip } from './Icons'
+import { FileCode, IconArrowRightFromBracket, IconCamera, IconCheckBox, IconCopy, IconJSON, IconMarkdown, IconSetting, IconZip } from './Icons'
 import { MenuItem } from './MenuItem'
+import { MessageSelectionToolbar, useMessageSelection, useMessageSelectionMode, useSelectionExport } from './MessageSelectionToolbar'
 import { SettingProvider, useSettingContext } from './SettingContext'
 import { SettingDialog } from './SettingDialog'
 
 import '../style.css'
 import './Dialog.css'
-
-function useCollapsedSidebar(container: HTMLDivElement, isMobile: boolean) {
-    const [isCollapsed, setIsCollapsed] = useState(false)
-
-    useEffect(() => {
-        if (isMobile) {
-            setIsCollapsed(false)
-            return
-        }
-
-        let frame = 0
-        const observed = new Set<Element>()
-        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
-
-        function sidebarElement() {
-            return container.closest('nav, aside, [aria-label="Sidebar"], [data-testid="sidebar"]')
-                ?? container.parentElement
-        }
-
-        function observe(element: Element | null | undefined) {
-            if (!observer || !element || observed.has(element)) return
-            observer.observe(element)
-            observed.add(element)
-        }
-
-        function update() {
-            cancelAnimationFrame(frame)
-            frame = requestAnimationFrame(() => {
-                const parentWidth = container.parentElement?.getBoundingClientRect().width ?? 0
-                const sidebarWidth = sidebarElement()?.getBoundingClientRect().width ?? parentWidth
-                const nextCollapsed = (parentWidth > 0 && parentWidth < 96)
-                    || (sidebarWidth > 0 && sidebarWidth < 96)
-
-                setIsCollapsed(nextCollapsed)
-                container.toggleAttribute('data-ce-sidebar-collapsed', nextCollapsed)
-                observe(container.parentElement)
-                observe(sidebarElement())
-            })
-        }
-
-        observe(container.parentElement)
-        observe(sidebarElement())
-        update()
-
-        window.addEventListener('resize', update)
-        return () => {
-            cancelAnimationFrame(frame)
-            window.removeEventListener('resize', update)
-            observer?.disconnect()
-            container.removeAttribute('data-ce-sidebar-collapsed')
-        }
-    }, [container, isMobile])
-
-    return isCollapsed
-}
 
 function MenuInner({ container }: { container: HTMLDivElement }) {
     const { t } = useTranslation()
@@ -80,14 +28,9 @@ function MenuInner({ container }: { container: HTMLDivElement }) {
     const [jsonOpen, setJsonOpen] = useState(false)
     const [exportOpen, setExportOpen] = useState(false)
     const [settingOpen, setSettingOpen] = useState(false)
+    const selection = useMessageSelection()
 
-    const {
-        format,
-        enableTimestamp,
-        timeStamp24H,
-        enableMeta,
-        exportMetaList,
-    } = useSettingContext()
+    const { format, enableTimestamp, timeStamp24H, enableMeta, exportMetaList } = useSettingContext()
 
     useEffect(() => {
         if (enableTimestamp) {
@@ -100,25 +43,41 @@ function MenuInner({ container }: { container: HTMLDivElement }) {
 
     const metaList = useMemo(() => enableMeta ? exportMetaList : [], [enableMeta, exportMetaList])
 
-    const onClickText = useCallback(() => exportToText(), [])
-    const onClickPng = useCallback(() => exportToPng(format), [format])
-    const onClickMarkdown = useCallback(() => exportToMarkdown(format, metaList), [format, metaList])
-    const onClickHtml = useCallback(() => exportToHtml(format, metaList), [format, metaList])
+    const closeSelectedExport = useCallback(() => {
+        setJsonOpen(false)
+        setOpen(false)
+    }, [])
+    const runExport = useSelectionExport(selection.active, closeSelectedExport)
+
+    const onClickText = useCallback(() => runExport(exportToText), [runExport])
+    const onClickPng = useCallback(() => runExport(() => exportToPng(format)), [format, runExport])
+    const onClickMarkdown = useCallback(() => runExport(() => exportToMarkdown(format, metaList)), [format, metaList, runExport])
+    const onClickHtml = useCallback(() => runExport(() => exportToHtml(format, metaList)), [format, metaList, runExport])
     const onClickJSON = useCallback(() => {
+        if (selection.active && selection.selectedMessageIds.size === 0) return false
         setJsonOpen(true)
         return true
-    }, [])
-    const onClickOfficialJSON = useCallback(() => exportToJson(format), [format])
-    const onClickTavern = useCallback(() => exportToTavern(format), [format])
-    const onClickOoba = useCallback(() => exportToOoba(format), [format])
+    }, [selection.active, selection.selectedMessageIds.size])
+    const onClickOfficialJSON = useCallback(() => runExport(() => exportToJson(format)), [format, runExport])
+    const onClickTavern = useCallback(() => runExport(() => exportToTavern(format)), [format, runExport])
+    const onClickOoba = useCallback(() => runExport(() => exportToOoba(format)), [format, runExport])
+    const onClickSelectMessages = useMessageSelectionMode(selection.active, setOpen)
 
     const width = useWindowResize(() => window.innerWidth)
     const isMobile = width < 768
     const isCollapsedSidebar = useCollapsedSidebar(container, isMobile)
-    const Portal = isMobile ? 'div' : HoverCard.Portal
+    const isOrphan = container.classList.contains('ce-exporter-orphan')
+    const Portal = HoverCard.Portal
 
     return (
         <>
+            <MessageSelectionToolbar
+                container={container}
+                onExport={() => {
+                    refreshMessageSelection()
+                    requestAnimationFrame(() => setOpen(true))
+                }}
+            />
             {isMobile && open && (
                 <div
                     className="dropdown-backdrop animate-fadeIn"
@@ -164,13 +123,20 @@ function MenuInner({ container }: { container: HTMLDivElement }) {
                             width: isMobile ? 316 : 268,
                             left: -6,
                             bottom: 0,
+                            backgroundColor: 'var(--ce-menu-primary)',
                         }}
-                        sideOffset={isMobile ? 0 : 8}
+                        sideOffset={isMobile && isOrphan ? 192 : isMobile ? 0 : 8}
                         side={isMobile ? 'bottom' : 'right'}
                         align="start"
                         alignOffset={isMobile ? 0 : -64}
-                        collisionPadding={isMobile ? 0 : 8}
+                        collisionPadding={isMobile && isOrphan ? 16 : isMobile ? 0 : 8}
                     >
+                        <MenuItem
+                            text={t(selection.active ? 'Cancel message selection' : 'Select messages')}
+                            icon={IconCheckBox}
+                            className="row-full"
+                            onClick={onClickSelectMessages}
+                        />
                         <SettingDialog
                             open={settingOpen}
                             onOpenChange={setSettingOpen}
@@ -185,24 +151,28 @@ function MenuInner({ container }: { container: HTMLDivElement }) {
                             successText={t('Copied!')}
                             icon={IconCopy}
                             className="row-full"
+                            disabled={selection.active && selection.selectedMessageIds.size === 0}
                             onClick={onClickText}
                         />
                         <MenuItem
                             text={t('Screenshot')}
                             icon={IconCamera}
                             className="row-half"
+                            disabled={selection.active && selection.selectedMessageIds.size === 0}
                             onClick={onClickPng}
                         />
                         <MenuItem
                             text={t('Markdown')}
                             icon={IconMarkdown}
                             className="row-half"
+                            disabled={selection.active && selection.selectedMessageIds.size === 0}
                             onClick={onClickMarkdown}
                         />
                         <MenuItem
                             text={t('HTML')}
                             icon={FileCode}
                             className="row-half"
+                            disabled={selection.active && selection.selectedMessageIds.size === 0}
                             onClick={onClickHtml}
                         />
                         <Dialog.Root
@@ -214,6 +184,7 @@ function MenuInner({ container }: { container: HTMLDivElement }) {
                                     text={t('JSON')}
                                     icon={IconJSON}
                                     className="row-half"
+                                    disabled={selection.active && selection.selectedMessageIds.size === 0}
                                     onClick={onClickJSON}
                                 />
                             </Dialog.Trigger>
@@ -242,18 +213,20 @@ function MenuInner({ container }: { container: HTMLDivElement }) {
                                 </Dialog.Content>
                             </Dialog.Portal>
                         </Dialog.Root>
-                        <ExportDialog
-                            format={format}
-                            open={exportOpen}
-                            onOpenChange={setExportOpen}
-                        >
-                            <div className="row-full">
-                                <MenuItem
-                                    text={t('Export All')}
-                                    icon={IconZip}
-                                />
-                            </div>
-                        </ExportDialog>
+                        {!selection.active && (
+                            <ExportDialog
+                                format={format}
+                                open={exportOpen}
+                                onOpenChange={setExportOpen}
+                            >
+                                <div className="row-full">
+                                    <MenuItem
+                                        text={t('Export All')}
+                                        icon={IconZip}
+                                    />
+                                </div>
+                            </ExportDialog>
+                        )}
 
                         {!isMobile && (
                             <HoverCard.Arrow

@@ -1,6 +1,7 @@
 import { render } from 'preact'
 import sentinel from 'sentinel-js'
 import { fetchConversation, processConversation } from './api'
+import { getMessageSelectionSnapshot, refreshMessageSelection, syncMessageSelectionTargets } from './messageSelection'
 import { getChatIdFromUrl, isSharePage } from './page'
 import { Menu } from './ui/Menu'
 import { onloadSafe } from './utils/utils'
@@ -37,15 +38,29 @@ function main() {
         sentinel.on('selector', injectNavMenu)
 
         setInterval(() => {
+            const selectionActive = getMessageSelectionSnapshot().active
             injectionMap.forEach((container, target) => {
-                if (!target.isConnected) {
-                    container.remove()
+                if (!target.isConnected || !container.isConnected) {
+                    const orphan = document.querySelector('.ce-exporter-orphan')
+                    if (selectionActive && !orphan) {
+                        container.classList.add('ce-exporter-orphan')
+                        document.body.append(container)
+                        refreshMessageSelection()
+                    }
+                    else {
+                        container.remove()
+                    }
                     injectionMap.delete(target)
                 }
             })
 
+            if (!selectionActive) {
+                document.querySelectorAll('.ce-exporter-orphan').forEach(container => container.remove())
+            }
+
             const targets = Array.from(document.querySelectorAll(selector)).filter(target => !injectionMap.has(target))
             targets.forEach(injectNavMenu)
+            syncMessageSelectionTargets(getChatIdFromUrl())
         }, 1000)
 
         // Support for share page
@@ -94,9 +109,14 @@ function main() {
 
 function getMenuContainer() {
     const container = document.createElement('div')
+    container.dataset.ceExporterRoot = ''
     // to overlap on the list section
     container.style.zIndex = '99'
-    render(<Menu container={container} />, container)
+    queueMicrotask(() => {
+        if (container.isConnected) {
+            render(<Menu container={container} />, container)
+        }
+    })
     return container
 }
 

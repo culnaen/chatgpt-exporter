@@ -1,5 +1,6 @@
 import { fetchConversation, getCurrentChatId, processConversation, shouldSkipMessageInExport } from '../api'
 import i18n from '../i18n'
+import { applyMessageSelection } from '../messageSelection'
 import { checkIfConversationStarted } from '../page'
 import { transformContentReferences } from '../utils/citations'
 import { copyToClipboard } from '../utils/clipboard'
@@ -19,7 +20,7 @@ export async function exportToText() {
     // So we don't need to waste time to download them
     const rawConversation = await fetchConversation(chatId, false)
 
-    const { conversationNodes } = processConversation(rawConversation)
+    const { conversationNodes } = applyMessageSelection(processConversation(rawConversation))
     const text = conversationNodes
         .map(({ message }) => transformMessage(message))
         .filter(Boolean)

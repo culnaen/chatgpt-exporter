@@ -1,12 +1,13 @@
 import html2canvas from 'html2canvas'
 import i18n from '../i18n'
+import { getSelectedMessageIds } from '../messageSelection'
 import { checkIfConversationStarted, getChatIdFromUrl } from '../page'
 import { downloadUrl, getFileNameWithFormat } from '../utils/download'
 import { Effect } from '../utils/effect'
 import { sleep } from '../utils/utils'
 
 // https://github.com/niklasvh/html2canvas/issues/2792#issuecomment-1042948572
-function fnIgnoreElements(el: any) {
+function fnIgnoreElements(el: Element) {
     return typeof el.shadowRoot === 'object' && el.shadowRoot !== null
 }
 
@@ -25,6 +26,8 @@ export async function exportToPng(fileNameFormat: string) {
     }
 
     const isDarkMode = document.documentElement.classList.contains('dark')
+    const selectedMessageIds = getSelectedMessageIds()
+    if (selectedMessageIds?.size === 0) return false
 
     effect.add(() => {
         const style = document.createElement('style')
@@ -34,6 +37,12 @@ export async function exportToPng(fileNameFormat: string) {
                 color: ${isDarkMode ? '#ececec' : '#0d0d0d'};
                 background-color: ${isDarkMode ? '#212121' : '#fff'};
             }
+
+            ${selectedMessageIds === null
+                ? ''
+                : `#thread [data-testid^="conversation-turn-"]:not([data-ce-message-selected]) {
+                    display: none;
+                }`}
 
             /* https://github.com/niklasvh/html2canvas/issues/2775#issuecomment-1204988157 */
             img {
@@ -63,11 +72,12 @@ export async function exportToPng(fileNameFormat: string) {
             /* conversation action bar */
             .group\\/conversation-turn > div > div.absolute,
             /* code block buttons */
-            #thread pre button {
+            #thread pre button,
+            .ce-message-selector {
                 visibility: hidden;
             }
             `
-        thread!.appendChild(style)
+        thread.appendChild(style)
         return () => style.remove()
     })
 
@@ -95,6 +105,7 @@ export async function exportToPng(fileNameFormat: string) {
             })
         }
         catch (error) {
+            if (!(error instanceof Error)) throw error
             // eslint-disable-next-line no-console
             console.log(`ChatGPT Exporter:takeScreenshot with height=${height} width=${width} scale=${scale}`)
             console.error('Failed to take screenshot', error)

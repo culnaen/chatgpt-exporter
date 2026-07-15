@@ -2,6 +2,7 @@ import JSZip from 'jszip'
 import { fetchConversation, getCurrentChatId, processConversation, shouldSkipMessageInExport } from '../api'
 import { KEY_SOURCES_ENABLED, KEY_THINKING_ENABLED, KEY_TIMESTAMP_24H, KEY_TIMESTAMP_ENABLED, KEY_TIMESTAMP_HTML, baseUrl } from '../constants'
 import i18n from '../i18n'
+import { applyMessageSelectionToRawConversation } from '../messageSelection'
 import { checkIfConversationStarted, getUserAvatar } from '../page'
 import templateHtml from '../template.html?raw'
 import { transformContentReferences } from '../utils/citations'
@@ -25,7 +26,7 @@ export async function exportToHtml(fileNameFormat: string, metaList: ExportMeta[
     const chatId = await getCurrentChatId()
     const rawConversation = await fetchConversation(chatId, true)
     const enableThinking = ScriptStorage.get<boolean>(KEY_THINKING_ENABLED) ?? false
-    const conversation = processConversation(rawConversation, { enableThinking })
+    const conversation = processConversation(applyMessageSelectionToRawConversation(rawConversation), { enableThinking })
     const html = conversationToHtml(conversation, userAvatar, metaList)
 
     const fileName = getFileNameWithFormat(fileNameFormat, 'html', { title: conversation.title, chatId, createTime: conversation.createTime, updateTime: conversation.updateTime })

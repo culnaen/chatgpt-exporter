@@ -22,7 +22,7 @@ export const MenuItem: FC<MenuItemProps> = ({ text, successText, disabled = fals
     const handleClick = typeof onClick === 'function'
         ? async (e: Event) => {
             e.preventDefault()
-            if (loading) return
+            if (loading || disabled) return
 
             try {
                 setLoading(true)
@@ -33,11 +33,23 @@ export const MenuItem: FC<MenuItemProps> = ({ text, successText, disabled = fals
                 }
             }
             catch (error) {
-                console.error(error)
+                if (error instanceof Error) {
+                    console.error(error)
+                }
+                else {
+                    throw error
+                }
             }
             finally {
                 setLoading(false)
             }
+        }
+        : undefined
+    const handleKeyDown = handleClick
+        ? async (event: KeyboardEvent) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            await handleClick(event)
         }
         : undefined
 
@@ -52,7 +64,10 @@ export const MenuItem: FC<MenuItemProps> = ({ text, successText, disabled = fals
             border border-menu ${className}`}
             onClick={handleClick}
             onTouchStart={handleClick}
-            disabled={disabled}
+            onKeyDown={handleKeyDown}
+            role="button"
+            tabIndex={disabled ? -1 : 0}
+            aria-disabled={disabled}
             aria-label={ariaLabel}
             title={title}
         >
